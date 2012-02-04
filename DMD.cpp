@@ -30,16 +30,22 @@
  Note this currently uses the SPI port for the fastest performance to the DMD, be
  careful of possible conflicts with other SPI port devices
 --------------------------------------------------------------------------------------*/
-DMD::DMD(byte panelsWide, byte panelsHigh)
+DMD::DMD(byte panelsWide, byte panelsHigh, byte panelsBPP)
 {
     uint16_t ui;
     DisplaysWide=panelsWide;
     DisplaysHigh=panelsHigh;
     DisplaysTotal=DisplaysWide*DisplaysHigh;
+    DisplaysBPP=panelsBPP;
     row1 = DisplaysTotal<<4;
     row2 = DisplaysTotal<<5;
     row3 = ((DisplaysTotal<<2)*3)<<2;
-    bDMDScreenRAM = (byte *) malloc(DisplaysTotal*DMD_RAM_SIZE_BYTES);
+    bDMDScreenRAM = (byte **) malloc (panelsBPP * sizeof(byte *));
+    for(byte i=0;i<panelsBPP;i++) {
+        bDMDScreenRAM[i] = (byte *) malloc(DisplaysTotal*DMD_RAM_SIZE_BYTES);
+;
+    }
+
 
     // initialize the SPI port
     SPI.begin();		// probably don't need this since it inits the port pins only, which we do just below with the appropriate DMD interface setup
@@ -61,7 +67,7 @@ DMD::DMD(byte panelsWide, byte panelsHigh)
     pinMode(PIN_DMD_R_DATA, OUTPUT);	//
     pinMode(PIN_DMD_nOE, OUTPUT);	//
 
-    clearScreen(true);
+    clearScreen(0);
 
     // init the scan line/ram pointer to the required start point
     bDMDByte = 0;
@@ -76,7 +82,7 @@ DMD::DMD(byte panelsWide, byte panelsHigh)
  Set or clear a pixel at the x and y location (0,0 is the top left corner)
 --------------------------------------------------------------------------------------*/
 void
- DMD::writePixel(unsigned int bX, unsigned int bY, byte bGraphicsMode, byte bPixel)
+ DMD::writePixel(unsigned int bX, unsigned int bY, byte colour)
 {
     unsigned int uiDMDRAMPointer;
 
@@ -84,51 +90,41 @@ void
 	    return;
     }
     byte panel=(bX/DMD_PIXELS_ACROSS) + (DisplaysWide*(bY/DMD_PIXELS_DOWN));
-    bX=(bX % DMD_PIXELS_ACROSS) + (panel<<5);
-    bY=bY % DMD_PIXELS_DOWN;
+    if ((DisplaysHigh - (panel/DisplaysWide)) & 1) {
+        bX=(bX % DMD_PIXELS_ACROSS) + (panel<<5);
+        bY=bY % DMD_PIXELS_DOWN;
+    } else {
+        panel=(panel/DisplaysWide) + (DisplaysWide-(panel%DisplaysWide)-1);
+        bX=((DisplaysWide*DMD_PIXELS_ACROSS) - (bX % DMD_PIXELS_ACROSS)-1) + (panel<<5);
+        bY=DMD_PIXELS_DOWN-(bY % DMD_PIXELS_DOWN)-1;
+    }
     //set pointer to DMD RAM byte to be modified
     uiDMDRAMPointer = bX/8 + bY*(DisplaysTotal<<2);
 
     byte lookup = bPixelLookupTable[bX & 0x07];
 
-    switch (bGraphicsMode) {
-    case GRAPHICS_NORMAL:
-	    if (bPixel == true)
-		bDMDScreenRAM[uiDMDRAMPointer] &= ~lookup;	// zero bit is pixel on
-	    else
-		bDMDScreenRAM[uiDMDRAMPointer] |= lookup;	// one bit is pixel off
-	    break;
-    case GRAPHICS_INVERSE:
-	    if (bPixel == false)
-		    bDMDScreenRAM[uiDMDRAMPointer] &= ~lookup;	// zero bit is pixel on
-	    else
-		    bDMDScreenRAM[uiDMDRAMPointer] |= lookup;	// one bit is pixel off
-	    break;
-    case GRAPHICS_TOGGLE:
-	    if (bPixel == true) {
-		if ((bDMDScreenRAM[uiDMDRAMPointer] & lookup) == 0)
-		    bDMDScreenRAM[uiDMDRAMPointer] |= lookup;	// one bit is pixel off
-		else
-		    bDMDScreenRAM[uiDMDRAMPointer] &= ~lookup;	// one bit is pixel off
-	    }
-	    break;
-    case GRAPHICS_OR:
-	    //only set pixels on
-	    if (bPixel == true)
-		    bDMDScreenRAM[uiDMDRAMPointer] &= ~lookup;	// zero bit is pixel on
-	    break;
-    case GRAPHICS_NOR:
-	    //only clear on pixels
-	    if ((bPixel == true) &&
-		    ((bDMDScreenRAM[uiDMDRAMPointer] & lookup) == 0))
-		    bDMDScreenRAM[uiDMDRAMPointer] |= lookup;	// one bit is pixel off
-	    break;
+    if (colour & 1) {
+		bDMDScreenRAM[0][uiDMDRAMPointer] &= ~lookup;	// zero bit is pixel on
+    } else {
+		bDMDScreenRAM[0][uiDMDRAMPointer] |= lookup;	// one bit is pixel off
+    }
+    if (DisplaysBPP==1) return;
+    if (colour & 2) {
+		bDMDScreenRAM[1][uiDMDRAMPointer] &= ~lookup;	// zero bit is pixel on
+    } else {
+		bDMDScreenRAM[1][uiDMDRAMPointer] |= lookup;	// one bit is pixel off
+    }
+    if (DisplaysBPP==2) return;
+    if (colour & 4) {
+		bDMDScreenRAM[2][uiDMDRAMPointer] &= ~lookup;	// zero bit is pixel on
+    } else {
+		bDMDScreenRAM[2][uiDMDRAMPointer] |= lookup;	// one bit is pixel off
     }
 
 }
 
 void DMD::drawString(int bX, int bY, const char *bChars, byte length,
-		     byte bGraphicsMode)
+		     byte fgcolour, byte bgcolour)
 {
     if (bX >= (DMD_PIXELS_ACROSS*DisplaysWide) || bY >= DMD_PIXELS_DOWN * DisplaysHigh)
 	return;
@@ -136,13 +132,13 @@ void DMD::drawString(int bX, int bY, const char *bChars, byte length,
     if (bY+height<0) return;
 
     int strWidth = 0;
-	this->drawLine(bX -1 , bY, bX -1 , bY + height, GRAPHICS_INVERSE);
+	this->drawLine(bX -1 , bY, bX -1 , bY + height, bgcolour);
 
     for (int i = 0; i < length; i++) {
-        int charWide = this->drawChar(bX+strWidth, bY, bChars[i], bGraphicsMode);
+        int charWide = this->drawChar(bX+strWidth, bY, bChars[i], fgcolour, bgcolour);
 	    if (charWide > 0) {
 	        strWidth += charWide ;
-	        this->drawLine(bX + strWidth , bY, bX + strWidth , bY + height, GRAPHICS_INVERSE);
+	        this->drawLine(bX + strWidth , bY, bX + strWidth , bY + height, bgcolour);
             strWidth++;
         } else if (charWide < 0) {
             return;
@@ -151,7 +147,7 @@ void DMD::drawString(int bX, int bY, const char *bChars, byte length,
     }
 }
 
-void DMD::drawMarquee(const char *bChars, byte length, int left, int top)
+void DMD::drawMarquee(const char *bChars, byte length, int left, int top, byte fgcolour, byte bgcolour)
 {
     marqueeWidth = 0;
     for (int i = 0; i < length; i++) {
@@ -163,8 +159,10 @@ void DMD::drawMarquee(const char *bChars, byte length, int left, int top)
     marqueeOffsetY = top;
     marqueeOffsetX = left;
     marqueeLength = length;
+    marqueeColour = fgcolour;
+    marqueeBG = bgcolour;
     drawString(marqueeOffsetX, marqueeOffsetY, marqueeText, marqueeLength,
-	   GRAPHICS_NORMAL);
+	   marqueeColour, marqueeBG);
 }
 
 boolean DMD::stepMarquee(int amountX, int amountY)
@@ -174,69 +172,55 @@ boolean DMD::stepMarquee(int amountX, int amountY)
     marqueeOffsetY += amountY;
     if (marqueeOffsetX < -marqueeWidth) {
 	    marqueeOffsetX = DMD_PIXELS_ACROSS * DisplaysWide;
-	    clearScreen(true);
+	    clearScreen(marqueeBG);
         ret=true;
     } else if (marqueeOffsetX > DMD_PIXELS_ACROSS * DisplaysWide) {
 	    marqueeOffsetX = -marqueeWidth;
-	    clearScreen(true);
+	    clearScreen(marqueeBG);
         ret=true;
     }
     
         
     if (marqueeOffsetY < -marqueeHeight) {
 	    marqueeOffsetY = DMD_PIXELS_DOWN * DisplaysHigh;
-	    clearScreen(true);
+	    clearScreen(marqueeBG);
         ret=true;
     } else if (marqueeOffsetY > DMD_PIXELS_DOWN * DisplaysHigh) {
 	    marqueeOffsetY = -marqueeHeight;
-	    clearScreen(true);
+	    clearScreen(marqueeBG);
         ret=true;
     }
 
     // Special case horizontal scrolling to improve speed
     if (amountY==0 && amountX==-1) {
-        // Shift entire screen one bit
-        for (int i=0; i<DMD_RAM_SIZE_BYTES*DisplaysTotal;i++) {
-            if ((i%(DisplaysWide*4)) == (DisplaysWide*4) -1) {
-                bDMDScreenRAM[i]=(bDMDScreenRAM[i]<<1)+1;
-            } else {
-                bDMDScreenRAM[i]=(bDMDScreenRAM[i]<<1) + ((bDMDScreenRAM[i+1] & 0x80) >>7);
-            }
-        }
+        this->scrollHorz(amountX,false);
 
         // Redraw last char on screen
         int strWidth=marqueeOffsetX;
         for (byte i=0; i < marqueeLength; i++) {
             int wide = charWidth(marqueeText[i]);
             if (strWidth+wide >= DisplaysWide*DMD_PIXELS_ACROSS) {
-                drawChar(strWidth, marqueeOffsetY,marqueeText[i],GRAPHICS_NORMAL);
+                drawChar(strWidth, marqueeOffsetY,marqueeText[i],marqueeColour, marqueeBG);
                 return ret;
             }
             strWidth += wide+1;
         }
     } else if (amountY==0 && amountX==1) {
-        // Shift entire screen one bit
-        for (int i=(DMD_RAM_SIZE_BYTES*DisplaysTotal)-1; i>=0;i--) {
-            if ((i%(DisplaysWide*4)) == 0) {
-                bDMDScreenRAM[i]=(bDMDScreenRAM[i]>>1)+128;
-            } else {
-                bDMDScreenRAM[i]=(bDMDScreenRAM[i]>>1) + ((bDMDScreenRAM[i-1] & 1) <<7);
-            }
-        }
+        this->scrollHorz(amountX,false);
 
-        // Redraw last char on screen
+        // Redraw first char on screen
         int strWidth=marqueeOffsetX;
         for (byte i=0; i < marqueeLength; i++) {
             int wide = charWidth(marqueeText[i]);
             if (strWidth+wide >= 0) {
-                drawChar(strWidth, marqueeOffsetY,marqueeText[i],GRAPHICS_NORMAL);
+                drawChar(strWidth, marqueeOffsetY,marqueeText[i],marqueeColour, marqueeBG);
                 return ret;
             }
             strWidth += wide+1;
         }
     } else {
         drawString(marqueeOffsetX, marqueeOffsetY, marqueeText, marqueeLength,
-	       GRAPHICS_NORMAL);
+	       marqueeColour, marqueeBG);
     }
 
     return ret;
@@ -246,18 +230,20 @@ boolean DMD::stepMarquee(int amountX, int amountY)
 /*--------------------------------------------------------------------------------------
  Clear the screen in DMD RAM
 --------------------------------------------------------------------------------------*/
-void DMD::clearScreen(byte bNormal)
+void DMD::clearScreen(byte colour)
 {
-    if (bNormal) // clear all pixels
-        memset(bDMDScreenRAM,0xFF,DMD_RAM_SIZE_BYTES*DisplaysTotal);
-    else // set all pixels
-        memset(bDMDScreenRAM,0x00,DMD_RAM_SIZE_BYTES*DisplaysTotal);
+    for (byte col=0; col<DisplaysBPP;col++) {
+        if (colour&(1<<col)) // clear all pixels
+            memset(bDMDScreenRAM[col],0x00,DMD_RAM_SIZE_BYTES*DisplaysTotal);
+        else // set all pixels
+            memset(bDMDScreenRAM[col],0xFF,DMD_RAM_SIZE_BYTES*DisplaysTotal);
+    }
 }
 
 /*--------------------------------------------------------------------------------------
  Draw or clear a line from x1,y1 to x2,y2
 --------------------------------------------------------------------------------------*/
-void DMD::drawLine(int x1, int y1, int x2, int y2, byte bGraphicsMode)
+void DMD::drawLine(int x1, int y1, int x2, int y2, byte colour)
 {
     int dy = y2 - y1;
     int dx = x2 - x1;
@@ -278,7 +264,7 @@ void DMD::drawLine(int x1, int y1, int x2, int y2, byte bGraphicsMode)
     dy <<= 1;			// dy is now 2*dy
     dx <<= 1;			// dx is now 2*dx
 
-    writePixel(x1, y1, bGraphicsMode, true);
+    writePixel(x1, y1, colour);
     if (dx > dy) {
 	    int fraction = dy - (dx >> 1);	// same as 2*dy - dx
 	    while (x1 != x2) {
@@ -288,7 +274,7 @@ void DMD::drawLine(int x1, int y1, int x2, int y2, byte bGraphicsMode)
 	        }
 	        x1 += stepx;
 	        fraction += dy;	// same as fraction -= 2*dy
-	        writePixel(x1, y1, bGraphicsMode, true);
+	        writePixel(x1, y1, colour);
 	    }
     } else {
 	    int fraction = dx - (dy >> 1);
@@ -299,7 +285,7 @@ void DMD::drawLine(int x1, int y1, int x2, int y2, byte bGraphicsMode)
 	        }
 	        y1 += stepy;
 	        fraction += dx;
-	        writePixel(x1, y1, bGraphicsMode, true);
+	        writePixel(x1, y1, colour);
 	    }
     }
 }
@@ -308,13 +294,13 @@ void DMD::drawLine(int x1, int y1, int x2, int y2, byte bGraphicsMode)
  Draw or clear a circle of radius r at x,y centre
 --------------------------------------------------------------------------------------*/
 void DMD::drawCircle(int xCenter, int yCenter, int radius,
-		     byte bGraphicsMode)
+		     byte colour)
 {
     int x = 0;
     int y = radius;
     int p = (5 - radius * 4) / 4;
 
-    drawCircleSub(xCenter, yCenter, x, y, bGraphicsMode);
+    drawCircleSub(xCenter, yCenter, x, y, colour);
     while (x < y) {
 	    x++;
 	    if (p < 0) {
@@ -323,54 +309,54 @@ void DMD::drawCircle(int xCenter, int yCenter, int radius,
 	        y--;
 	        p += 2 * (x - y) + 1;
 	    }
-	    drawCircleSub(xCenter, yCenter, x, y, bGraphicsMode);
+	    drawCircleSub(xCenter, yCenter, x, y, colour);
     }
 }
 
-void DMD::drawCircleSub(int cx, int cy, int x, int y, byte bGraphicsMode)
+void DMD::drawCircleSub(int cx, int cy, int x, int y, byte colour)
 {
 
     if (x == 0) {
-	    writePixel(cx, cy + y, bGraphicsMode, true);
-	    writePixel(cx, cy - y, bGraphicsMode, true);
-	    writePixel(cx + y, cy, bGraphicsMode, true);
-	    writePixel(cx - y, cy, bGraphicsMode, true);
+	    writePixel(cx, cy + y, colour);
+	    writePixel(cx, cy - y, colour);
+	    writePixel(cx + y, cy, colour);
+	    writePixel(cx - y, cy, colour);
     } else if (x == y) {
-	    writePixel(cx + x, cy + y, bGraphicsMode, true);
-	    writePixel(cx - x, cy + y, bGraphicsMode, true);
-	    writePixel(cx + x, cy - y, bGraphicsMode, true);
-	    writePixel(cx - x, cy - y, bGraphicsMode, true);
+	    writePixel(cx + x, cy + y, colour);
+	    writePixel(cx - x, cy + y, colour);
+	    writePixel(cx + x, cy - y, colour);
+	    writePixel(cx - x, cy - y, colour);
     } else if (x < y) {
-	    writePixel(cx + x, cy + y, bGraphicsMode, true);
-	    writePixel(cx - x, cy + y, bGraphicsMode, true);
-	    writePixel(cx + x, cy - y, bGraphicsMode, true);
-	    writePixel(cx - x, cy - y, bGraphicsMode, true);
-	    writePixel(cx + y, cy + x, bGraphicsMode, true);
-	    writePixel(cx - y, cy + x, bGraphicsMode, true);
-	    writePixel(cx + y, cy - x, bGraphicsMode, true);
-	    writePixel(cx - y, cy - x, bGraphicsMode, true);
+	    writePixel(cx + x, cy + y, colour);
+	    writePixel(cx - x, cy + y, colour);
+	    writePixel(cx + x, cy - y, colour);
+	    writePixel(cx - x, cy - y, colour);
+	    writePixel(cx + y, cy + x, colour);
+	    writePixel(cx - y, cy + x, colour);
+	    writePixel(cx + y, cy - x, colour);
+	    writePixel(cx - y, cy - x, colour);
     }
 }
 
 /*--------------------------------------------------------------------------------------
  Draw or clear a box(rectangle) with a single pixel border
 --------------------------------------------------------------------------------------*/
-void DMD::drawBox(int x1, int y1, int x2, int y2, byte bGraphicsMode)
+void DMD::drawBox(int x1, int y1, int x2, int y2, byte colour)
 {
-    drawLine(x1, y1, x2, y1, bGraphicsMode);
-    drawLine(x2, y1, x2, y2, bGraphicsMode);
-    drawLine(x2, y2, x1, y2, bGraphicsMode);
-    drawLine(x1, y2, x1, y1, bGraphicsMode);
+    drawLine(x1, y1, x2, y1, colour);
+    drawLine(x2, y1, x2, y2, colour);
+    drawLine(x2, y2, x1, y2, colour);
+    drawLine(x1, y2, x1, y1, colour);
 }
 
 /*--------------------------------------------------------------------------------------
  Draw or clear a filled box(rectangle) with a single pixel border
 --------------------------------------------------------------------------------------*/
 void DMD::drawFilledBox(int x1, int y1, int x2, int y2,
-			byte bGraphicsMode)
+			byte colour)
 {
     for (int b = x1; b <= x2; b++) {
-	    drawLine(b, y1, b, y2, bGraphicsMode);
+	    drawLine(b, y1, b, y2, colour);
     }
 }
 
@@ -388,24 +374,24 @@ void DMD::drawTestPattern(byte bPattern)
 	    case PATTERN_ALT_0:	// every alternate pixel, first pixel on
 		    if ((ui & pixelsWide) == 0)
 		        //even row
-		        writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), GRAPHICS_NORMAL, ui & 1);
+		        writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), ui & 1);
 		    else
 		        //odd row
-		        writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), GRAPHICS_NORMAL, !(ui & 1));
+		        writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), (ui+1) & 1);
 		    break;
 	    case PATTERN_ALT_1:	// every alternate pixel, first pixel off
 		    if ((ui & pixelsWide) == 0)
 		        //even row
-		        writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), GRAPHICS_NORMAL, !(ui & 1));
+		        writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), (ui+1) & 1);
 		    else
 		        //odd row
-		        writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), GRAPHICS_NORMAL, ui & 1);
+		        writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), ui & 1);
 		    break;
 	    case PATTERN_STRIPE_0:	// vertical stripes, first stripe on
-		    writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), GRAPHICS_NORMAL, ui & 1);
+		    writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), (ui & 1)*DisplaysBPP);
 		    break;
 	    case PATTERN_STRIPE_1:	// vertical stripes, first stripe off
-		    writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), GRAPHICS_NORMAL, !(ui & 1));
+		    writePixel((ui & (pixelsWide-1)), ((ui & ~(pixelsWide-1)) / pixelsWide), ((ui+1) & 1)*DisplaysBPP);
 		    break;
         }
     }
@@ -423,34 +409,33 @@ void DMD::scanDisplayBySPI()
     {
         //SPI transfer pixels to the display hardware shift registers
         int rowsize=DisplaysTotal<<2;
-        int offset=rowsize * bDMDByte;
+        int offset=rowsize * (bDMDByte & 3);
+        byte col=bDMDByte>>2;
         for (int i=0;i<rowsize;i++) {
-            SPI.transfer(bDMDScreenRAM[offset+i+row3]);
-            SPI.transfer(bDMDScreenRAM[offset+i+row2]);
-            SPI.transfer(bDMDScreenRAM[offset+i+row1]);
-            SPI.transfer(bDMDScreenRAM[offset+i]);
+            SPI.transfer(bDMDScreenRAM[col][offset+i+row3]);
+            SPI.transfer(bDMDScreenRAM[col][offset+i+row2]);
+            SPI.transfer(bDMDScreenRAM[col][offset+i+row1]);
+            SPI.transfer(bDMDScreenRAM[col][offset+i]);
         }
 
         OE_DMD_ROWS_OFF();
         LATCH_DMD_SHIFT_REG_TO_OUTPUT();
-        switch (bDMDByte) {
+        switch (bDMDByte & 3) {
         case 0:			// row 1, 5, 9, 13 were clocked out
             LIGHT_DMD_ROW_01_05_09_13();
-            bDMDByte=1;
             break;
         case 1:			// row 2, 6, 10, 14 were clocked out
             LIGHT_DMD_ROW_02_06_10_14();
-            bDMDByte=2;
             break;
         case 2:			// row 3, 7, 11, 15 were clocked out
             LIGHT_DMD_ROW_03_07_11_15();
-            bDMDByte=3;
             break;
         case 3:			// row 4, 8, 12, 16 were clocked out
             LIGHT_DMD_ROW_04_08_12_16();
-            bDMDByte=0;
             break;
         }
+        bDMDByte++;
+        if (bDMDByte==4*DisplaysBPP) bDMDByte=0;
         OE_DMD_ROWS_ON();
     }
 }
@@ -461,14 +446,14 @@ void DMD::selectFont(const uint8_t * font)
 }
 
 
-int DMD::drawChar(const int bX, const int bY, const char letter, byte bGraphicsMode)
+int DMD::drawChar(const int bX, const int bY, const char letter, byte fgcolour, byte bgcolour)
 {
     if (bX > (DMD_PIXELS_ACROSS*DisplaysWide) || bY > (DMD_PIXELS_DOWN*DisplaysHigh) ) return -1;
     char c = letter;
     uint8_t height = pgm_read_byte(this->Font + FONT_HEIGHT);
     if (c == ' ') {
 	    int charWide = charWidth(' ');
-	    this->drawFilledBox(bX, bY, bX + charWide, bY + height, GRAPHICS_INVERSE);
+	    this->drawFilledBox(bX, bY, bX + charWide, bY + height, bgcolour);
 	    return charWide;
     }
     uint8_t width = 0;
@@ -508,9 +493,9 @@ int DMD::drawChar(const int bX, const int bY, const char letter, byte bGraphicsM
 	        for (uint8_t k = 0; k < 8; k++) { // Vertical bits
 		        if ((offset+k >= i*8) && (offset+k <= height)) {
 		            if (data & (1 << k)) {
-			            writePixel(bX + j, bY + offset + k, bGraphicsMode, true);
+			            writePixel(bX + j, bY + offset + k, fgcolour);
 		            } else {
-			            writePixel(bX + j, bY + offset + k, bGraphicsMode, false);
+			            writePixel(bX + j, bY + offset + k, bgcolour);
 		            }
 		        }
 	        }
@@ -545,4 +530,168 @@ int DMD::charWidth(const char letter)
 	    width = pgm_read_byte(this->Font + FONT_WIDTH_TABLE + c);
     }
     return width;
+}
+
+void DMD::dumpPixels()
+{
+/*
+    for (int y=0;y<16;y++) {
+        for (int x=0;x<32;x++) {
+            if (bDMDScreenRAM[y][x/4] & bPixelLookupTable[x & 0x07]) {
+                Serial.print(".");
+            } else {
+                Serial.print("#");
+            }
+        }
+        Serial.println();
+    }
+*/
+}
+
+void DMD::scrollVert(int direction, boolean wrap) 
+{
+    int offset,newoffset;
+    int rowsize=DisplaysTotal<<2;
+    for (byte col=0;col<DisplaysBPP;col++) {
+        if (direction<0) {
+            for (int panelY=DisplaysHigh-1;panelY>=0;panelY--) {
+                if ((DisplaysHigh - panelY) & 1) { // Normal panel
+                    for (int y=15;y>=0;y--) {
+                        offset=y*rowsize + (panelY*DisplaysWide*4);
+                        newoffset=offset-rowsize;
+                        for (byte x=0;x<(DisplaysWide<<2);x++) {
+                            if (y==0) {
+                                if (panelY>0) {
+                                    byte b = bDMDScreenRAM[col][((DisplaysTotal*4)-1) - (offset+x)];
+                                    bDMDScreenRAM[col][offset+x] = ((b * 0x0802LU & 0x22110LU) | (b * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16;  // reverse bits
+                                } else {
+                                    bDMDScreenRAM[col][offset+x]=0xFF;
+                                }
+                            } else {
+                                bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
+                            }
+                        }
+                    }
+                } else { //Upsidedown panel
+                    for (int y=0;y<16;y++) {
+                        offset=y*rowsize + (panelY*DisplaysWide*4);
+                        newoffset=offset+rowsize;
+                        for (byte x=0;x<(DisplaysWide<<2);x++) {
+                            if (y==15) {
+                                bDMDScreenRAM[col][offset+x]=0xFF;
+                            } else {
+                                bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (direction > 0) {
+            for (byte panelY=0;panelY<DisplaysHigh;panelY++) {
+                if ((DisplaysHigh - panelY) & 1) { // Normal panel
+                    for (int y=0;y<16;y++) {
+                        offset=y*rowsize + (panelY*DisplaysWide*4);
+                        newoffset=offset+rowsize;
+                        for (byte x=0;x<(DisplaysWide<<2);x++) {
+                            if (y==15) {
+                                bDMDScreenRAM[col][offset+x]=0xFF;
+                            } else {
+                                bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
+                            }
+                        }
+                    }
+                } else { //Upsidedown panel
+                    for (int y=15;y>=0;y--) {
+                        offset=y*rowsize + (panelY*DisplaysWide*4);
+                        newoffset=offset-rowsize;
+                        for (byte x=0;x<(DisplaysWide<<2);x++) {
+                            if (y==0) {
+                                if (DisplaysHigh>0) {
+                                    byte b = bDMDScreenRAM[col][offset + (((DisplaysTotal*4)-1)-x)];
+                                    bDMDScreenRAM[col][offset+x] = ((b * 0x0802LU & 0x22110LU) | (b * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16;  // reverse bits
+                                } else {
+                                    bDMDScreenRAM[col][offset+x]=0xFF;
+                                }
+                            } else {
+                                bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void DMD::scrollHorz(int direction, boolean wrap)
+{
+    int rowsize=DisplaysTotal<<2;
+    for (byte col=0; col<DisplaysBPP;col++) {
+        if (direction<0) {
+            for (byte panelY=0;panelY<DisplaysHigh;panelY++) {
+                for (int y=0;y<16;y++) {
+                    int offset=panelY*(DisplaysWide*4) + y*rowsize;
+                    if ((DisplaysHigh - panelY) & 1) { // Normal panel
+                        for (byte x=0;x<(DisplaysWide<<2)-1;x++) {
+                            bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + ((bDMDScreenRAM[col][offset+x+1] & 0x80) >>7);
+                        }
+                        byte x=(DisplaysWide<<2)-1;
+                        bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + 1;
+                    } else { // Upsidedown panel
+                        for (int x=(DisplaysWide<<2)-1;x>0;x--) {
+                            bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]>>1) + ((bDMDScreenRAM[col][offset+x-1] & 1) <<7);
+                        }
+                        bDMDScreenRAM[col][offset]=(bDMDScreenRAM[col][offset]>>1)+128;
+                    }
+                }
+            }
+        } else if (direction>0) {
+            for (byte panelY=0;panelY<DisplaysHigh;panelY++) {
+                for (int y=0;y<16;y++) {
+                    int offset=panelY*(DisplaysWide*4) + y*rowsize;
+                    if ((DisplaysHigh - panelY) & 1) { // Normal panel
+                        for (int x=(DisplaysWide<<2)-1;x>0;x--) {
+                            bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]>>1) + ((bDMDScreenRAM[col][offset+x-1] & 1) <<7);
+                        }
+                        bDMDScreenRAM[col][offset]=(bDMDScreenRAM[col][offset]>>1)+128;
+                    } else { // Upsidedown panel
+                        for (byte x=0;x<(DisplaysWide<<2)-1;x++) {
+                            bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + ((bDMDScreenRAM[col][offset+x+1] & 0x80) >>7);
+                        }
+                        byte x=(DisplaysWide<<2)-1;
+                        bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + 1;
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+byte DMD::getPixel(unsigned int bX, unsigned int bY)
+{
+    unsigned int uiDMDRAMPointer;
+
+    if (bX >= (DMD_PIXELS_ACROSS*DisplaysWide) || bY >= (DMD_PIXELS_DOWN * DisplaysHigh)) {
+            return 0;
+    }
+    byte panel=(bX/DMD_PIXELS_ACROSS) + (DisplaysWide*(bY/DMD_PIXELS_DOWN));
+    if ((panel/DisplaysWide) & 1) {
+        bX=(bX % DMD_PIXELS_ACROSS) + (panel<<5);
+        bY=bY % DMD_PIXELS_DOWN;
+    } else {
+        bX=(DMD_PIXELS_ACROSS - (bX % DMD_PIXELS_ACROSS)-1) + (panel<<5);
+        bY=DMD_PIXELS_DOWN-(bY % DMD_PIXELS_DOWN)-1;
+    }
+    //set pointer to DMD RAM byte to be modified
+    uiDMDRAMPointer = bX/8 + bY*(DisplaysTotal<<2);
+
+    byte lookup = bPixelLookupTable[bX & 0x07];
+    byte col=0;
+    for (byte i=0;i<DisplaysBPP;i++) {
+        if ((bDMDScreenRAM[i][uiDMDRAMPointer] & lookup) == 0) {
+            col=col+(1<<i);
+        }
+    }
+    return col;
 }
