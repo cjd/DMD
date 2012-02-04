@@ -48,8 +48,8 @@
 //Fire up the DMD library as dmd
 #define DISPLAYS_ACROSS 1
 #define DISPLAYS_DOWN 1
-#define DISPLAYS_BPP 2
-#define WHITE 1<<(DISPLAYS_BPP-1)
+#define DISPLAYS_BPP 1
+#define WHITE 0xFF
 #define BLACK 0
 
 DMD dmd(DISPLAYS_ACROSS, DISPLAYS_DOWN, DISPLAYS_BPP);
@@ -75,7 +75,7 @@ void setup(void)
    Timer1.attachInterrupt( ScanDMD );   //attach the Timer1 interrupt to ScanDMD which goes to dmd.scanDisplayBySPI()
 
    //clear/init the DMD pixels held in RAM
-   dmd.clearScreen( true );   //true is normal (all pixels off), false is negative (all pixels on)
+   dmd.clearScreen( BLACK );   //true is normal (all pixels off), false is negative (all pixels on)
 
 }
 
@@ -88,7 +88,7 @@ void loop(void)
    byte b;
    
    // 10 x 14 font clock, including demo of OR and NOR modes for pixels so that the flashing colon can be overlayed
-   dmd.clearScreen( true );
+   dmd.clearScreen( BLACK );
    dmd.selectFont(Arial_Black_16);
    dmd.drawChar(  0,  3, '2', WHITE,BLACK );
    dmd.drawChar(  7,  3, '3', WHITE,BLACK );
@@ -124,7 +124,7 @@ void loop(void)
    delay( 1000 );
    
    // display some text
-   dmd.clearScreen( true );
+   dmd.clearScreen( BLACK );
    dmd.selectFont(System5x7);
    for (byte x=0;x<DISPLAYS_ACROSS;x++) {
      for (byte y=0;y<DISPLAYS_DOWN;y++) {
@@ -135,7 +135,7 @@ void loop(void)
    delay( 2000 );
    
    // draw a border rectangle around the outside of the display
-   dmd.clearScreen( true );
+   dmd.clearScreen( BLACK );
    dmd.drawBox(  0,  0, (32*DISPLAYS_ACROSS)-1, (16*DISPLAYS_DOWN)-1, WHITE );
    delay( 1000 );
    
