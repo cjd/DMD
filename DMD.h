@@ -113,6 +113,8 @@ class DMD
 {
   public:
     //Instantiate the DMD
+    DMD(); // Default single display at 1 BPP
+    DMD(byte panelsWide, byte panelsHigh); // Default with 1 BPP
     DMD(byte panelsWide, byte panelsHigh, byte BPP);
 	//virtual ~DMD();
 
@@ -129,10 +131,10 @@ class DMD
   void selectFont(const uint8_t* font);
 
   //Draw a single character
-  int drawChar(const int bX, const int bY, const char letter, byte fgcolour, byte bgcolour);
+  byte drawChar(const int bX, const int bY, const char letter, byte fgcolour, byte bgcolour);
 
   //Find the width of a character
-  int charWidth(const char letter);
+  byte charWidth(const char letter);
 
   //Draw a scrolling string
   void drawMarquee( const char* bChars, byte length, int left, int top, byte fgcolour, byte bgcolour);
@@ -193,6 +195,8 @@ class DMD
     //Display information
     byte DisplaysWide;
     byte DisplaysHigh;
+    int DisplayMaxX;
+    int DisplayMaxY;
     byte DisplaysTotal;
     byte DisplaysBPP;
     int row1, row2, row3;

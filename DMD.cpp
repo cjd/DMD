@@ -32,9 +32,10 @@
 --------------------------------------------------------------------------------------*/
 DMD::DMD(byte panelsWide, byte panelsHigh, byte panelsBPP)
 {
-    uint16_t ui;
     DisplaysWide=panelsWide;
     DisplaysHigh=panelsHigh;
+    DisplayMaxX=DisplaysWide*DMD_PIXELS_ACROSS;
+    DisplayMaxY=DisplaysHigh*DMD_PIXELS_DOWN;
     DisplaysTotal=DisplaysWide*DisplaysHigh;
     DisplaysBPP=panelsBPP;
     row1 = DisplaysTotal<<4;
@@ -86,7 +87,7 @@ void
 {
     unsigned int uiDMDRAMPointer;
 
-    if (bX >= (DMD_PIXELS_ACROSS*DisplaysWide) || bY >= (DMD_PIXELS_DOWN * DisplaysHigh)) {
+    if (bX > DisplayMaxX || bY > DisplayMaxY) {
 	    return;
     }
     byte panel=(bX/DMD_PIXELS_ACROSS) + (DisplaysWide*(bY/DMD_PIXELS_DOWN));
@@ -126,7 +127,7 @@ void
 void DMD::drawString(int bX, int bY, const char *bChars, byte length,
 		     byte fgcolour, byte bgcolour)
 {
-    if (bX >= (DMD_PIXELS_ACROSS*DisplaysWide) || bY >= DMD_PIXELS_DOWN * DisplaysHigh)
+    if (bX > DisplayMaxX || bY > DisplayMaxY)
 	return;
     uint8_t height = pgm_read_byte(this->Font + FONT_HEIGHT);
     if (bY+height<0) return;
@@ -134,7 +135,7 @@ void DMD::drawString(int bX, int bY, const char *bChars, byte length,
     int strWidth = 0;
 	this->drawLine(bX -1 , bY, bX -1 , bY + height, bgcolour);
 
-    for (int i = 0; i < length; i++) {
+    for (byte i = 0; i < length; i++) {
         int charWide = this->drawChar(bX+strWidth, bY, bChars[i], fgcolour, bgcolour);
 	    if (charWide > 0) {
 	        strWidth += charWide ;
@@ -143,14 +144,14 @@ void DMD::drawString(int bX, int bY, const char *bChars, byte length,
         } else if (charWide < 0) {
             return;
         }
-        if ((bX + strWidth) >= DMD_PIXELS_ACROSS * DisplaysWide || bY >= DMD_PIXELS_DOWN * DisplaysHigh) return;
+        if ((bX + strWidth) > DisplayMaxX || bY > DisplayMaxY) return;
     }
 }
 
 void DMD::drawMarquee(const char *bChars, byte length, int left, int top, byte fgcolour, byte bgcolour)
 {
     marqueeWidth = 0;
-    for (int i = 0; i < length; i++) {
+    for (byte i = 0; i < length; i++) {
 	    marqueeText[i] = bChars[i];
 	    marqueeWidth += charWidth(bChars[i]) + 1;
     }
@@ -171,10 +172,10 @@ boolean DMD::stepMarquee(int amountX, int amountY)
     marqueeOffsetX += amountX;
     marqueeOffsetY += amountY;
     if (marqueeOffsetX < -marqueeWidth) {
-	    marqueeOffsetX = DMD_PIXELS_ACROSS * DisplaysWide;
+	    marqueeOffsetX = DisplayMaxX;
 	    clearScreen(marqueeBG);
         ret=true;
-    } else if (marqueeOffsetX > DMD_PIXELS_ACROSS * DisplaysWide) {
+    } else if (marqueeOffsetX > DisplayMaxX) {
 	    marqueeOffsetX = -marqueeWidth;
 	    clearScreen(marqueeBG);
         ret=true;
@@ -198,8 +199,8 @@ boolean DMD::stepMarquee(int amountX, int amountY)
         // Redraw last char on screen
         int strWidth=marqueeOffsetX;
         for (byte i=0; i < marqueeLength; i++) {
-            int wide = charWidth(marqueeText[i]);
-            if (strWidth+wide >= DisplaysWide*DMD_PIXELS_ACROSS) {
+            byte wide = charWidth(marqueeText[i]);
+            if (strWidth+wide >= DisplayMaxX) {
                 drawChar(strWidth, marqueeOffsetY,marqueeText[i],marqueeColour, marqueeBG);
                 return ret;
             }
@@ -211,7 +212,7 @@ boolean DMD::stepMarquee(int amountX, int amountY)
         // Redraw first char on screen
         int strWidth=marqueeOffsetX;
         for (byte i=0; i < marqueeLength; i++) {
-            int wide = charWidth(marqueeText[i]);
+            byte wide = charWidth(marqueeText[i]);
             if (strWidth+wide >= 0) {
                 drawChar(strWidth, marqueeOffsetY,marqueeText[i],marqueeColour, marqueeBG);
                 return ret;
@@ -365,11 +366,9 @@ void DMD::drawFilledBox(int x1, int y1, int x2, int y2,
 --------------------------------------------------------------------------------------*/
 void DMD::drawTestPattern(byte bPattern)
 {
-    unsigned int ui;
-
-    int numPixels=DisplaysTotal * DMD_PIXELS_ACROSS * DMD_PIXELS_DOWN;
-    int pixelsWide=DMD_PIXELS_ACROSS*DisplaysWide;
-    for (ui = 0; ui < numPixels; ui++) {
+    unsigned int numPixels=DisplaysTotal * DMD_PIXELS_ACROSS * DMD_PIXELS_DOWN;
+    int pixelsWide=DisplayMaxX;
+    for (unsigned int ui = 0; ui < numPixels; ui++) {
 	    switch (bPattern) {
 	    case PATTERN_ALT_0:	// every alternate pixel, first pixel on
 		    if ((ui & pixelsWide) == 0)
@@ -446,13 +445,13 @@ void DMD::selectFont(const uint8_t * font)
 }
 
 
-int DMD::drawChar(const int bX, const int bY, const char letter, byte fgcolour, byte bgcolour)
+byte DMD::drawChar(const int bX, const int bY, const char letter, byte fgcolour, byte bgcolour)
 {
-    if (bX > (DMD_PIXELS_ACROSS*DisplaysWide) || bY > (DMD_PIXELS_DOWN*DisplaysHigh) ) return -1;
+    if (bX > DisplayMaxX || bY > DisplayMaxY ) return -1;
     char c = letter;
     uint8_t height = pgm_read_byte(this->Font + FONT_HEIGHT);
     if (c == ' ') {
-	    int charWide = charWidth(' ');
+	    byte charWide = charWidth(' ');
 	    this->drawFilledBox(bX, bY, bX + charWide, bY + height, bgcolour);
 	    return charWide;
     }
@@ -504,7 +503,7 @@ int DMD::drawChar(const int bX, const int bY, const char letter, byte fgcolour, 
     return width;
 }
 
-int DMD::charWidth(const char letter)
+byte DMD::charWidth(const char letter)
 {
     char c = letter;
     // Space is often not included in font so use width of 'n'
@@ -573,7 +572,7 @@ void DMD::scrollVert(int direction, boolean wrap)
                         }
                     }
                 } else { //Upsidedown panel
-                    for (int y=0;y<16;y++) {
+                    for (byte y=0;y<16;y++) {
                         offset=y*rowsize + (panelY*DisplaysWide*4);
                         newoffset=offset+rowsize;
                         for (byte x=0;x<(DisplaysWide<<2);x++) {
@@ -589,7 +588,7 @@ void DMD::scrollVert(int direction, boolean wrap)
         } else if (direction > 0) {
             for (byte panelY=0;panelY<DisplaysHigh;panelY++) {
                 if ((DisplaysHigh - panelY) & 1) { // Normal panel
-                    for (int y=0;y<16;y++) {
+                    for (byte y=0;y<16;y++) {
                         offset=y*rowsize + (panelY*DisplaysWide*4);
                         newoffset=offset+rowsize;
                         for (byte x=0;x<(DisplaysWide<<2);x++) {
@@ -629,7 +628,7 @@ void DMD::scrollHorz(int direction, boolean wrap)
     for (byte col=0; col<DisplaysBPP;col++) {
         if (direction<0) {
             for (byte panelY=0;panelY<DisplaysHigh;panelY++) {
-                for (int y=0;y<16;y++) {
+                for (byte y=0;y<16;y++) {
                     int offset=panelY*(DisplaysWide*4) + y*rowsize;
                     if ((DisplaysHigh - panelY) & 1) { // Normal panel
                         for (byte x=0;x<(DisplaysWide<<2)-1;x++) {
@@ -647,7 +646,7 @@ void DMD::scrollHorz(int direction, boolean wrap)
             }
         } else if (direction>0) {
             for (byte panelY=0;panelY<DisplaysHigh;panelY++) {
-                for (int y=0;y<16;y++) {
+                for (byte y=0;y<16;y++) {
                     int offset=panelY*(DisplaysWide*4) + y*rowsize;
                     if ((DisplaysHigh - panelY) & 1) { // Normal panel
                         for (int x=(DisplaysWide<<2)-1;x>0;x--) {
