@@ -87,7 +87,7 @@ void
 {
     unsigned int uiDMDRAMPointer;
 
-    if (bX > DisplayMaxX || bY > DisplayMaxY) {
+    if (bX >= DisplayMaxX || bY >= DisplayMaxY) {
 	    return;
     }
     byte panel=(bX/DMD_PIXELS_ACROSS) + (DisplaysWide*(bY/DMD_PIXELS_DOWN));
@@ -127,8 +127,7 @@ void
 void DMD::drawString(int bX, int bY, const char *bChars, byte length,
 		     byte fgcolour, byte bgcolour)
 {
-    if (bX > DisplayMaxX || bY > DisplayMaxY)
-	return;
+    if (bX >= DisplayMaxX || bY >= DisplayMaxY) return;
     uint8_t height = pgm_read_byte(this->Font + FONT_HEIGHT);
     if (bY+height<0) return;
 
@@ -144,7 +143,7 @@ void DMD::drawString(int bX, int bY, const char *bChars, byte length,
         } else if (charWide < 0) {
             return;
         }
-        if ((bX + strWidth) > DisplayMaxX || bY > DisplayMaxY) return;
+        if ((bX + strWidth) >= DisplayMaxX || bY >= DisplayMaxY) return;
     }
 }
 
@@ -186,7 +185,7 @@ boolean DMD::stepMarquee(int amountX, int amountY)
 	    marqueeOffsetY = DMD_PIXELS_DOWN * DisplaysHigh;
 	    clearScreen(marqueeBG);
         ret=true;
-    } else if (marqueeOffsetY > DMD_PIXELS_DOWN * DisplaysHigh) {
+    } else if (marqueeOffsetY > DisplayMaxY) {
 	    marqueeOffsetY = -marqueeHeight;
 	    clearScreen(marqueeBG);
         ret=true;
@@ -447,7 +446,7 @@ void DMD::selectFont(const uint8_t * font)
 
 byte DMD::drawChar(const int bX, const int bY, const char letter, byte fgcolour, byte bgcolour)
 {
-    if (bX > DisplayMaxX || bY > DisplayMaxY ) return -1;
+    if (bX >= DisplayMaxX || bY >= DisplayMaxY ) return -1;
     char c = letter;
     uint8_t height = pgm_read_byte(this->Font + FONT_HEIGHT);
     if (c == ' ') {
