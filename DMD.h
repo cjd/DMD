@@ -113,8 +113,6 @@ class DMD
 {
   public:
     //Instantiate the DMD
-    DMD(); // Default single display at 1 BPP
-    DMD(byte panelsWide, byte panelsHigh); // Default with 1 BPP
     DMD(byte panelsWide, byte panelsHigh, byte BPP);
 	//virtual ~DMD();
 
@@ -201,7 +199,7 @@ class DMD
     byte DisplaysBPP;
     int row1, row2, row3;
 
-    //scanning pointer into bDMDScreenRAM, setup init @ 48 for the first valid scan
+    //scanning pointer into bDMDScreenRAM, setup init @ 0 for the first valid scan
     volatile byte bDMDByte;
 
 };

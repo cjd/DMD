@@ -487,6 +487,8 @@ byte DMD::drawChar(const int bX, const int bY, const char letter, byte fgcolour,
 		    int offset = (i * 8);
 		    if ((i == bytes - 1) && bytes > 1) {
 		        offset = height - 8;
+            } else if (height<8) {
+                offset = height - 7;
             }
 	        for (uint8_t k = 0; k < 8; k++) { // Vertical bits
 		        if ((offset+k >= i*8) && (offset+k <= height)) {
