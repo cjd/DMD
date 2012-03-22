@@ -44,15 +44,13 @@ DMD::DMD(byte panelsWide, byte panelsHigh, byte panelsBPP)
     bDMDScreenRAM = (byte **) malloc (panelsBPP * sizeof(byte *));
     for(byte i=0;i<panelsBPP;i++) {
         bDMDScreenRAM[i] = (byte *) malloc(DisplaysTotal*DMD_RAM_SIZE_BYTES);
-;
     }
-
 
     // initialize the SPI port
     SPI.begin();		// probably don't need this since it inits the port pins only, which we do just below with the appropriate DMD interface setup
     SPI.setBitOrder(MSBFIRST);	//
     SPI.setDataMode(SPI_MODE0);	// CPOL=0, CPHA=0
-    SPI.setClockDivider(SPI_CLOCK_DIV128);	// system clock / 2 = 8MHz SPI CLK to shift registers
+    SPI.setClockDivider(SPI_CLOCK_DIV16);	// system clock / 2 = 8MHz SPI CLK to shift registers
 
     digitalWrite(PIN_DMD_A, LOW);	// 
     digitalWrite(PIN_DMD_B, LOW);	// 
@@ -91,37 +89,30 @@ void
 	    return;
     }
     byte panel=(bX/DMD_PIXELS_ACROSS) + (DisplaysWide*(bY/DMD_PIXELS_DOWN));
-    if ((DisplaysHigh - (panel/DisplaysWide)) & 1) {
-        bX=(bX % DMD_PIXELS_ACROSS) + (panel<<5);
-        bY=bY % DMD_PIXELS_DOWN;
-    } else {
-        panel=(panel/DisplaysWide) + (DisplaysWide-(panel%DisplaysWide)-1);
-        bX=((DisplaysWide*DMD_PIXELS_ACROSS) - (bX % DMD_PIXELS_ACROSS)-1) + (panel<<5);
-        bY=DMD_PIXELS_DOWN-(bY % DMD_PIXELS_DOWN)-1;
-    }
+    bX=(bX % DMD_PIXELS_ACROSS) + (panel<<5);
+    bY=bY % DMD_PIXELS_DOWN;
     //set pointer to DMD RAM byte to be modified
     uiDMDRAMPointer = bX/8 + bY*(DisplaysTotal<<2);
 
     byte lookup = bPixelLookupTable[bX & 0x07];
 
     if (colour & 1) {
-		bDMDScreenRAM[0][uiDMDRAMPointer] &= ~lookup;	// zero bit is pixel on
+        bDMDScreenRAM[0][uiDMDRAMPointer] &= ~lookup;   // zero bit is p
     } else {
-		bDMDScreenRAM[0][uiDMDRAMPointer] |= lookup;	// one bit is pixel off
+        bDMDScreenRAM[0][uiDMDRAMPointer] |= lookup;    // one bit is pi
     }
     if (DisplaysBPP==1) return;
     if (colour & 2) {
-		bDMDScreenRAM[1][uiDMDRAMPointer] &= ~lookup;	// zero bit is pixel on
+        bDMDScreenRAM[1][uiDMDRAMPointer] &= ~lookup;   // zero bit is p
     } else {
-		bDMDScreenRAM[1][uiDMDRAMPointer] |= lookup;	// one bit is pixel off
+        bDMDScreenRAM[1][uiDMDRAMPointer] |= lookup;    // one bit is pi
     }
     if (DisplaysBPP==2) return;
     if (colour & 4) {
-		bDMDScreenRAM[2][uiDMDRAMPointer] &= ~lookup;	// zero bit is pixel on
+        bDMDScreenRAM[2][uiDMDRAMPointer] &= ~lookup;   // zero bit is p
     } else {
-		bDMDScreenRAM[2][uiDMDRAMPointer] |= lookup;	// one bit is pixel off
+        bDMDScreenRAM[2][uiDMDRAMPointer] |= lookup;    // one bit is pi
     }
-
 }
 
 void DMD::drawString(int bX, int bY, const char *bChars, byte length,
@@ -555,66 +546,32 @@ void DMD::scrollVert(int direction, boolean wrap)
     for (byte col=0;col<DisplaysBPP;col++) {
         if (direction<0) {
             for (int panelY=DisplaysHigh-1;panelY>=0;panelY--) {
-                if ((DisplaysHigh - panelY) & 1) { // Normal panel
-                    for (int y=15;y>=0;y--) {
-                        offset=y*rowsize + (panelY*DisplaysWide*4);
-                        newoffset=offset-rowsize;
-                        for (byte x=0;x<(DisplaysWide<<2);x++) {
-                            if (y==0) {
-                                if (panelY>0) {
-                                    byte b = bDMDScreenRAM[col][((DisplaysTotal*4)-1) - (offset+x)];
-                                    bDMDScreenRAM[col][offset+x] = ((b * 0x0802LU & 0x22110LU) | (b * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16;  // reverse bits
-                                } else {
-                                    bDMDScreenRAM[col][offset+x]=0xFF;
-                                }
+                for (int y=15;y>=0;y--) {
+                    offset=y*rowsize + (panelY*DisplaysWide*4);
+                    newoffset=offset-rowsize;
+                    for (byte x=0;x<(DisplaysWide<<2);x++) {
+                        if (y==0) {
+                            if (panelY>0) {
+                                bDMDScreenRAM[col][offset+x] = bDMDScreenRAM[col][15*rowsize + ((panelY-1)*DisplaysWide*4)+x];
                             } else {
-                                bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
-                            }
-                        }
-                    }
-                } else { //Upsidedown panel
-                    for (byte y=0;y<16;y++) {
-                        offset=y*rowsize + (panelY*DisplaysWide*4);
-                        newoffset=offset+rowsize;
-                        for (byte x=0;x<(DisplaysWide<<2);x++) {
-                            if (y==15) {
                                 bDMDScreenRAM[col][offset+x]=0xFF;
-                            } else {
-                                bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
                             }
+                        } else {
+                            bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
                         }
                     }
                 }
             }
         } else if (direction > 0) {
             for (byte panelY=0;panelY<DisplaysHigh;panelY++) {
-                if ((DisplaysHigh - panelY) & 1) { // Normal panel
-                    for (byte y=0;y<16;y++) {
-                        offset=y*rowsize + (panelY*DisplaysWide*4);
-                        newoffset=offset+rowsize;
-                        for (byte x=0;x<(DisplaysWide<<2);x++) {
-                            if (y==15) {
-                                bDMDScreenRAM[col][offset+x]=0xFF;
-                            } else {
-                                bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
-                            }
-                        }
-                    }
-                } else { //Upsidedown panel
-                    for (int y=15;y>=0;y--) {
-                        offset=y*rowsize + (panelY*DisplaysWide*4);
-                        newoffset=offset-rowsize;
-                        for (byte x=0;x<(DisplaysWide<<2);x++) {
-                            if (y==0) {
-                                if (DisplaysHigh>0) {
-                                    byte b = bDMDScreenRAM[col][offset + (((DisplaysTotal*4)-1)-x)];
-                                    bDMDScreenRAM[col][offset+x] = ((b * 0x0802LU & 0x22110LU) | (b * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16;  // reverse bits
-                                } else {
-                                    bDMDScreenRAM[col][offset+x]=0xFF;
-                                }
-                            } else {
-                                bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
-                            }
+                for (byte y=0;y<16;y++) {
+                    offset=y*rowsize + (panelY*DisplaysWide*4);
+                    newoffset=offset+rowsize;
+                    for (byte x=0;x<(DisplaysWide<<2);x++) {
+                        if (y==15) {
+                            bDMDScreenRAM[col][offset+x]=0xFF;
+                        } else {
+                            bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
                         }
                     }
                 }
@@ -631,41 +588,25 @@ void DMD::scrollHorz(int direction, boolean wrap)
             for (byte panelY=0;panelY<DisplaysHigh;panelY++) {
                 for (byte y=0;y<16;y++) {
                     int offset=panelY*(DisplaysWide*4) + y*rowsize;
-                    if ((DisplaysHigh - panelY) & 1) { // Normal panel
-                        for (byte x=0;x<(DisplaysWide<<2)-1;x++) {
-                            bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + ((bDMDScreenRAM[col][offset+x+1] & 0x80) >>7);
-                        }
-                        byte x=(DisplaysWide<<2)-1;
-                        bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + 1;
-                    } else { // Upsidedown panel
-                        for (int x=(DisplaysWide<<2)-1;x>0;x--) {
-                            bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]>>1) + ((bDMDScreenRAM[col][offset+x-1] & 1) <<7);
-                        }
-                        bDMDScreenRAM[col][offset]=(bDMDScreenRAM[col][offset]>>1)+128;
+                    for (byte x=0;x<(DisplaysWide<<2)-1;x++) {
+                        bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + ((bDMDScreenRAM[col][offset+x+1] & 0x80) >>7);
                     }
+                    byte x=(DisplaysWide<<2)-1;
+                    bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + 1;
                 }
             }
         } else if (direction>0) {
             for (byte panelY=0;panelY<DisplaysHigh;panelY++) {
                 for (byte y=0;y<16;y++) {
                     int offset=panelY*(DisplaysWide*4) + y*rowsize;
-                    if ((DisplaysHigh - panelY) & 1) { // Normal panel
-                        for (int x=(DisplaysWide<<2)-1;x>0;x--) {
-                            bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]>>1) + ((bDMDScreenRAM[col][offset+x-1] & 1) <<7);
-                        }
-                        bDMDScreenRAM[col][offset]=(bDMDScreenRAM[col][offset]>>1)+128;
-                    } else { // Upsidedown panel
-                        for (byte x=0;x<(DisplaysWide<<2)-1;x++) {
-                            bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + ((bDMDScreenRAM[col][offset+x+1] & 0x80) >>7);
-                        }
-                        byte x=(DisplaysWide<<2)-1;
-                        bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + 1;
+                    for (int x=(DisplaysWide<<2)-1;x>0;x--) {
+                        bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]>>1) + ((bDMDScreenRAM[col][offset+x-1] & 1) <<7);
                     }
+                    bDMDScreenRAM[col][offset]=(bDMDScreenRAM[col][offset]>>1)+128;
                 }
             }
         }
     }
-
 }
 
 byte DMD::getPixel(unsigned int bX, unsigned int bY)
@@ -676,13 +617,8 @@ byte DMD::getPixel(unsigned int bX, unsigned int bY)
             return 0;
     }
     byte panel=(bX/DMD_PIXELS_ACROSS) + (DisplaysWide*(bY/DMD_PIXELS_DOWN));
-    if ((panel/DisplaysWide) & 1) {
-        bX=(bX % DMD_PIXELS_ACROSS) + (panel<<5);
-        bY=bY % DMD_PIXELS_DOWN;
-    } else {
-        bX=(DMD_PIXELS_ACROSS - (bX % DMD_PIXELS_ACROSS)-1) + (panel<<5);
-        bY=DMD_PIXELS_DOWN-(bY % DMD_PIXELS_DOWN)-1;
-    }
+    bX=(bX % DMD_PIXELS_ACROSS) + (panel<<5);
+    bY=bY % DMD_PIXELS_DOWN;
     //set pointer to DMD RAM byte to be modified
     uiDMDRAMPointer = bX/8 + bY*(DisplaysTotal<<2);
 
