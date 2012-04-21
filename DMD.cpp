@@ -41,10 +41,7 @@ DMD::DMD(byte panelsWide, byte panelsHigh, byte panelsBPP)
     row1 = DisplaysTotal<<4;
     row2 = DisplaysTotal<<5;
     row3 = ((DisplaysTotal<<2)*3)<<2;
-    bDMDScreenRAM = (byte **) malloc (panelsBPP * sizeof(byte *));
-    for(byte i=0;i<panelsBPP;i++) {
-        bDMDScreenRAM[i] = (byte *) malloc(DisplaysTotal*DMD_RAM_SIZE_BYTES);
-    }
+    setupBuffer(1);
 
     // initialize the SPI port
     SPI.begin();		// probably don't need this since it inits the port pins only, which we do just below with the appropriate DMD interface setup
@@ -72,10 +69,43 @@ DMD::DMD(byte panelsWide, byte panelsHigh, byte panelsBPP)
     bDMDByte = 0;
 }
 
-//DMD::~DMD()
-//{
-//   // nothing needed here
-//}
+/*--------------------------------------------------------------------------------------
+ Setup for buffers
+--------------------------------------------------------------------------------------*/
+void
+ DMD::setupBuffer( byte buffers)
+{
+    if (bDMDScreenRAM != NULL) {
+        for(byte i=0;i<DisplaysBPP;i++) {
+            if (bDMDScreenRAM[i] != NULL) free(bDMDScreenRAM[i]);
+        }
+        free(bDMDScreenRAM);
+    }
+    DisplayBuf=0;
+    EditBuf=0;
+    bDMDScreenRAM = (byte **) malloc (buffers * DisplaysBPP * sizeof(byte *));
+    for(byte i=0;i<(DisplaysBPP*buffers);i++) {
+        bDMDScreenRAM[i] = (byte *) malloc(DisplaysTotal*DMD_RAM_SIZE_BYTES);
+    }
+}
+
+/*--------------------------------------------------------------------------------------
+ Set which buffer will be editted
+--------------------------------------------------------------------------------------*/
+void
+ DMD::setBufferEdit(byte buffer)
+{
+    EditBuf=buffer;
+}
+
+/*--------------------------------------------------------------------------------------
+ Set which buffer will be displayed
+--------------------------------------------------------------------------------------*/
+void
+ DMD::setBufferDisplay (byte buffer)
+{
+    DisplayBuf=buffer;
+}
 
 /*--------------------------------------------------------------------------------------
  Set or clear a pixel at the x and y location (0,0 is the top left corner)
@@ -97,21 +127,21 @@ void
     byte lookup = bPixelLookupTable[bX & 0x07];
 
     if (colour > 0) {
-        bDMDScreenRAM[0][uiDMDRAMPointer] &= ~lookup;   // zero bit is p
+        bDMDScreenRAM[0+(DisplaysBPP*EditBuf)][uiDMDRAMPointer] &= ~lookup;
     } else {
-        bDMDScreenRAM[0][uiDMDRAMPointer] |= lookup;    // one bit is pi
+        bDMDScreenRAM[0+(DisplaysBPP*EditBuf)][uiDMDRAMPointer] |= lookup;
     }
     if (DisplaysBPP==1) return;
     if (colour > 1) {
-        bDMDScreenRAM[1][uiDMDRAMPointer] &= ~lookup;   // zero bit is p
+        bDMDScreenRAM[1+(DisplaysBPP*EditBuf)][uiDMDRAMPointer] &= ~lookup;
     } else {
-        bDMDScreenRAM[1][uiDMDRAMPointer] |= lookup;    // one bit is pi
+        bDMDScreenRAM[1+(DisplaysBPP*EditBuf)][uiDMDRAMPointer] |= lookup;
     }
     if (DisplaysBPP==2) return;
     if (colour > 2) {
-        bDMDScreenRAM[2][uiDMDRAMPointer] &= ~lookup;   // zero bit is p
+        bDMDScreenRAM[2+(DisplaysBPP*EditBuf)][uiDMDRAMPointer] &= ~lookup;
     } else {
-        bDMDScreenRAM[2][uiDMDRAMPointer] |= lookup;    // one bit is pi
+        bDMDScreenRAM[2+(DisplaysBPP*EditBuf)][uiDMDRAMPointer] |= lookup;
     }
 }
 
@@ -225,9 +255,9 @@ void DMD::clearScreen(byte colour)
 {
     for (byte col=0; col<DisplaysBPP;col++) {
         if (colour&(1<<col)) // clear all pixels
-            memset(bDMDScreenRAM[col],0x00,DMD_RAM_SIZE_BYTES*DisplaysTotal);
+            memset(bDMDScreenRAM[col+(DisplaysBPP*EditBuf)],0x00,DMD_RAM_SIZE_BYTES*DisplaysTotal);
         else // set all pixels
-            memset(bDMDScreenRAM[col],0xFF,DMD_RAM_SIZE_BYTES*DisplaysTotal);
+            memset(bDMDScreenRAM[col+(DisplaysBPP*EditBuf)],0xFF,DMD_RAM_SIZE_BYTES*DisplaysTotal);
     }
 }
 
@@ -401,10 +431,10 @@ void DMD::scanDisplayBySPI()
         int offset=rowsize * (bDMDByte & 3);
         byte col=bDMDByte>>2;
         for (int i=0;i<rowsize;i++) {
-            SPI.transfer(bDMDScreenRAM[col][offset+i+row3]);
-            SPI.transfer(bDMDScreenRAM[col][offset+i+row2]);
-            SPI.transfer(bDMDScreenRAM[col][offset+i+row1]);
-            SPI.transfer(bDMDScreenRAM[col][offset+i]);
+            SPI.transfer(bDMDScreenRAM[col+(DisplaysBPP*DisplayBuf)][offset+i+row3]);
+            SPI.transfer(bDMDScreenRAM[col+(DisplaysBPP*DisplayBuf)][offset+i+row2]);
+            SPI.transfer(bDMDScreenRAM[col+(DisplaysBPP*DisplayBuf)][offset+i+row1]);
+            SPI.transfer(bDMDScreenRAM[col+(DisplaysBPP*DisplayBuf)][offset+i]);
         }
 
         OE_DMD_ROWS_OFF();
@@ -552,12 +582,12 @@ void DMD::scrollVert(int direction, boolean wrap)
                     for (byte x=0;x<(DisplaysWide<<2);x++) {
                         if (y==0) {
                             if (panelY>0) {
-                                bDMDScreenRAM[col][offset+x] = bDMDScreenRAM[col][15*rowsize + ((panelY-1)*DisplaysWide*4)+x];
+                                bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x] = bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][15*rowsize + ((panelY-1)*DisplaysWide*4)+x];
                             } else {
-                                bDMDScreenRAM[col][offset+x]=0xFF;
+                                bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x]=0xFF;
                             }
                         } else {
-                            bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
+                            bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x]=bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][newoffset+x];
                         }
                     }
                 }
@@ -569,9 +599,9 @@ void DMD::scrollVert(int direction, boolean wrap)
                     newoffset=offset+rowsize;
                     for (byte x=0;x<(DisplaysWide<<2);x++) {
                         if (y==15) {
-                            bDMDScreenRAM[col][offset+x]=0xFF;
+                            bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x]=0xFF;
                         } else {
-                            bDMDScreenRAM[col][offset+x]=bDMDScreenRAM[col][newoffset+x];
+                            bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x]=bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][newoffset+x];
                         }
                     }
                 }
@@ -589,10 +619,10 @@ void DMD::scrollHorz(int direction, boolean wrap)
                 for (byte y=0;y<16;y++) {
                     int offset=panelY*(DisplaysWide*4) + y*rowsize;
                     for (byte x=0;x<(DisplaysWide<<2)-1;x++) {
-                        bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + ((bDMDScreenRAM[col][offset+x+1] & 0x80) >>7);
+                        bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x]=(bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x]<<1) + ((bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x+1] & 0x80) >>7);
                     }
                     byte x=(DisplaysWide<<2)-1;
-                    bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]<<1) + 1;
+                    bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x]=(bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x]<<1) + 1;
                 }
             }
         } else if (direction>0) {
@@ -600,9 +630,9 @@ void DMD::scrollHorz(int direction, boolean wrap)
                 for (byte y=0;y<16;y++) {
                     int offset=panelY*(DisplaysWide*4) + y*rowsize;
                     for (int x=(DisplaysWide<<2)-1;x>0;x--) {
-                        bDMDScreenRAM[col][offset+x]=(bDMDScreenRAM[col][offset+x]>>1) + ((bDMDScreenRAM[col][offset+x-1] & 1) <<7);
+                        bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x]=(bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x]>>1) + ((bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset+x-1] & 1) <<7);
                     }
-                    bDMDScreenRAM[col][offset]=(bDMDScreenRAM[col][offset]>>1)+128;
+                    bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset]=(bDMDScreenRAM[col+(DisplaysBPP*EditBuf)][offset]>>1)+128;
                 }
             }
         }
@@ -625,9 +655,75 @@ byte DMD::getPixel(unsigned int bX, unsigned int bY)
     byte lookup = bPixelLookupTable[bX & 0x07];
     byte col=0;
     for (byte i=0;i<DisplaysBPP;i++) {
-        if ((bDMDScreenRAM[i][uiDMDRAMPointer] & lookup) == 0) {
+        if ((bDMDScreenRAM[i+(DisplaysBPP*EditBuf)][uiDMDRAMPointer] & lookup) == 0) {
             col=col+(1<<i);
         }
     }
     return col;
+}
+
+/* Transition between two buffers with output to third */
+boolean DMD::transition(byte frombuffer1, byte frombuffer2, byte outbuffer, byte transType, int step)
+{
+    byte oldEditBuf=EditBuf;
+    for (int x=0;x<DisplayMaxX;x++) {
+        for (int y=0;y<DisplayMaxY;y++) {
+            byte col=0;
+	        switch (transType) {
+	        case TRANS_WIPE_DOWN:
+                if (y<step) {
+                    EditBuf=frombuffer1;
+                } else {
+                    EditBuf=frombuffer2;
+                }
+                col = getPixel(x,y);
+                break;
+	        case TRANS_WIPE_UP:
+                if ((DisplayMaxY-y)<step) {
+                    EditBuf=frombuffer1;
+                } else {
+                    EditBuf=frombuffer2;
+                }
+                col = getPixel(x,y);
+                break;
+	        case TRANS_WIPE_LEFT:
+                if ((DisplayMaxX-x)<step) {
+                    EditBuf=frombuffer1;
+                } else {
+                    EditBuf=frombuffer2;
+                }
+                col = getPixel(x,y);
+                break;
+	        case TRANS_WIPE_RIGHT:
+                if (x<step) {
+                    EditBuf=frombuffer1;
+                } else {
+                    EditBuf=frombuffer2;
+                }
+                col = getPixel(x,y);
+                break;
+	        case TRANS_ZOOM_OUT:
+                break;
+	        case TRANS_ZOOM_IN:
+                break;
+            }
+            EditBuf=outbuffer;
+            writePixel(x,y,col);
+        }
+    }
+	switch (transType) {
+	case TRANS_WIPE_DOWN:
+	case TRANS_WIPE_UP:
+        if (step>=DisplayMaxY) return false;
+        break;
+	case TRANS_WIPE_LEFT:
+	case TRANS_WIPE_RIGHT:
+        if (step>=DisplayMaxX) return false;
+        break;
+	case TRANS_ZOOM_OUT:
+        break;
+	case TRANS_ZOOM_IN:
+        break;
+    }
+    return true;
 }

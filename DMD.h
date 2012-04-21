@@ -105,6 +105,14 @@ static byte bPixelLookupTable[8] =
 #define FONT_CHAR_COUNT         5
 #define FONT_WIDTH_TABLE        6
 
+// Transition Types
+#define TRANS_WIPE_DOWN         0
+#define TRANS_WIPE_UP           1
+#define TRANS_WIPE_LEFT         2
+#define TRANS_WIPE_RIGHT        3
+#define TRANS_ZOOM_OUT     4
+#define TRANS_ZOOM_IN      5
+
 typedef uint8_t (*FontCallback)(const uint8_t*);
 
 
@@ -114,7 +122,15 @@ class DMD
   public:
     //Instantiate the DMD
     DMD(byte panelsWide, byte panelsHigh, byte BPP);
-	//virtual ~DMD();
+
+    //Setup double bufferring
+    void setupBuffer( byte buffers);
+
+    //Set Buffer to edit
+    void setBufferEdit (byte buffer);
+
+    //Set Buffer to display
+    void setBufferDisplay (byte buffer);
 
   //Set or clear a pixel at the x and y location (0,0 is the top left corner)
   void writePixel( unsigned int bX, unsigned int bY, byte colour);
@@ -167,6 +183,9 @@ class DMD
   //Insert the calls to this function into the main loop for the highest call rate, or from a timer interrupt
   void scanDisplayBySPI();
 
+  //Transition between two buffers with output to third
+  boolean transition(byte frombuffer1, byte frombuffer2, byte outbuffer, byte transType, int step);
+
   //Debugging tool
   void dumpPixels();
 
@@ -191,6 +210,8 @@ class DMD
     const uint8_t* Font;
 
     //Display information
+    byte DisplayBuf;
+    byte EditBuf;
     byte DisplaysWide;
     byte DisplaysHigh;
     int DisplayMaxX;
