@@ -50,7 +50,7 @@ DMD::DMD(byte panelsWide, byte panelsHigh, byte panelsBPP)
     SPI.begin();		// probably don't need this since it inits the port pins only, which we do just below with the appropriate DMD interface setup
     SPI.setBitOrder(MSBFIRST);	//
     SPI.setDataMode(SPI_MODE0);	// CPOL=0, CPHA=0
-    SPI.setClockDivider(SPI_CLOCK_DIV16);	// system clock / 2 = 8MHz SPI CLK to shift registers
+    SPI.setClockDivider(SPI_CLOCK_DIV2);	// system clock / 2 = 8MHz SPI CLK to shift registers
 
     digitalWrite(PIN_DMD_A, LOW);	// 
     digitalWrite(PIN_DMD_B, LOW);	// 
@@ -96,19 +96,19 @@ void
 
     byte lookup = bPixelLookupTable[bX & 0x07];
 
-    if (colour & 1) {
+    if (colour > 0) {
         bDMDScreenRAM[0][uiDMDRAMPointer] &= ~lookup;   // zero bit is p
     } else {
         bDMDScreenRAM[0][uiDMDRAMPointer] |= lookup;    // one bit is pi
     }
     if (DisplaysBPP==1) return;
-    if (colour & 2) {
+    if (colour > 1) {
         bDMDScreenRAM[1][uiDMDRAMPointer] &= ~lookup;   // zero bit is p
     } else {
         bDMDScreenRAM[1][uiDMDRAMPointer] |= lookup;    // one bit is pi
     }
     if (DisplaysBPP==2) return;
-    if (colour & 4) {
+    if (colour > 2) {
         bDMDScreenRAM[2][uiDMDRAMPointer] &= ~lookup;   // zero bit is p
     } else {
         bDMDScreenRAM[2][uiDMDRAMPointer] |= lookup;    // one bit is pi
