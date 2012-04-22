@@ -86,6 +86,7 @@ void
     bDMDScreenRAM = (byte **) malloc (buffers * DisplaysBPP * sizeof(byte *));
     for(byte i=0;i<(DisplaysBPP*buffers);i++) {
         bDMDScreenRAM[i] = (byte *) malloc(DisplaysTotal*DMD_RAM_SIZE_BYTES);
+        memset(bDMDScreenRAM[i],0xFF,DMD_RAM_SIZE_BYTES*DisplaysTotal);
     }
 }
 
@@ -666,51 +667,74 @@ byte DMD::getPixel(unsigned int bX, unsigned int bY)
 boolean DMD::transition(byte frombuffer1, byte frombuffer2, byte outbuffer, byte transType, int step)
 {
     byte oldEditBuf=EditBuf;
+    int centreX=DisplayMaxX/2;
+    int centreY=DisplayMaxY/2;
     for (int x=0;x<DisplayMaxX;x++) {
         for (int y=0;y<DisplayMaxY;y++) {
             byte col=0;
 	        switch (transType) {
 	        case TRANS_WIPE_DOWN:
                 if (y<step) {
-                    EditBuf=frombuffer1;
-                } else {
                     EditBuf=frombuffer2;
+                } else {
+                    EditBuf=frombuffer1;
                 }
                 col = getPixel(x,y);
                 break;
 	        case TRANS_WIPE_UP:
                 if ((DisplayMaxY-y)<step) {
-                    EditBuf=frombuffer1;
-                } else {
                     EditBuf=frombuffer2;
+                } else {
+                    EditBuf=frombuffer1;
                 }
                 col = getPixel(x,y);
                 break;
 	        case TRANS_WIPE_LEFT:
                 if ((DisplayMaxX-x)<step) {
-                    EditBuf=frombuffer1;
-                } else {
                     EditBuf=frombuffer2;
+                } else {
+                    EditBuf=frombuffer1;
                 }
                 col = getPixel(x,y);
                 break;
 	        case TRANS_WIPE_RIGHT:
                 if (x<step) {
+                    EditBuf=frombuffer2;
+                } else {
+                    EditBuf=frombuffer1;
+                }
+                col = getPixel(x,y);
+                break;
+	        case TRANS_ZOOM_IN:
+                if (x<step || y<step || (x-DisplayMaxX>-step) || (y-DisplayMaxY>-step)) {
+                    EditBuf=frombuffer2;
+                } else {
+                    EditBuf=frombuffer1;
+                }
+                col = getPixel(x,y);
+                break;
+	        case TRANS_ZOOM_OUT:
+                if (x<(centreX-step) || y<(centreX-step) || (x-DisplayMaxX>-(centreX-step)) || (y-DisplayMaxY>-(centreX-step))) {
                     EditBuf=frombuffer1;
                 } else {
                     EditBuf=frombuffer2;
                 }
                 col = getPixel(x,y);
                 break;
-	        case TRANS_ZOOM_OUT:
-                break;
-	        case TRANS_ZOOM_IN:
+            default:
+                if ((DisplayMaxX-x)<step) {
+                    EditBuf=frombuffer2;
+                } else {
+                    EditBuf=frombuffer1;
+                }
+                col = getPixel(x,y);
                 break;
             }
             EditBuf=outbuffer;
             writePixel(x,y,col);
         }
     }
+    EditBuf=oldEditBuf;
 	switch (transType) {
 	case TRANS_WIPE_DOWN:
 	case TRANS_WIPE_UP:
@@ -721,9 +745,19 @@ boolean DMD::transition(byte frombuffer1, byte frombuffer2, byte outbuffer, byte
         if (step>=DisplayMaxX) return false;
         break;
 	case TRANS_ZOOM_OUT:
+        if (step>=(max(centreX,centreY))) return false;
         break;
 	case TRANS_ZOOM_IN:
+        if (step>=(min(centreX,centreY))) return false;
         break;
     }
     return true;
+}
+
+/* Copy one buffer to another */
+void DMD::copyBuffer(byte frombuffer, byte tobuffer)
+{
+    for (byte col=0; col<DisplaysBPP;col++) {
+        memcpy(bDMDScreenRAM[col+(DisplaysBPP*tobuffer)],bDMDScreenRAM[col+(DisplaysBPP*frombuffer)],DMD_RAM_SIZE_BYTES*DisplaysTotal);
+    }
 }

@@ -185,6 +185,8 @@ class DMD
 
   //Transition between two buffers with output to third
   boolean transition(byte frombuffer1, byte frombuffer2, byte outbuffer, byte transType, int step);
+  /* Copy one buffer to another */
+  void copyBuffer(byte frombuffer, byte tobuffer);
 
   //Debugging tool
   void dumpPixels();
