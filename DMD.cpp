@@ -745,10 +745,10 @@ boolean DMD::transition(byte frombuffer1, byte frombuffer2, byte outbuffer, byte
         if (step>=DisplayMaxX) return false;
         break;
 	case TRANS_ZOOM_OUT:
-        if (step>=(max(centreX,centreY))) return false;
+        if (step>(max(centreX,centreY))) return false;
         break;
 	case TRANS_ZOOM_IN:
-        if (step>=(min(centreX,centreY))) return false;
+        if (step>(min(centreX,centreY))) return false;
         break;
     }
     return true;
