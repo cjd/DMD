@@ -110,8 +110,10 @@ static byte bPixelLookupTable[8] =
 #define TRANS_WIPE_UP           1
 #define TRANS_WIPE_LEFT         2
 #define TRANS_WIPE_RIGHT        3
-#define TRANS_ZOOM_OUT     4
-#define TRANS_ZOOM_IN      5
+#define TRANS_BOX_OUT           4
+#define TRANS_BOX_IN            5
+#define TRANS_CROSS_OUT         6
+#define TRANS_CROSS_IN          7
 
 typedef uint8_t (*FontCallback)(const uint8_t*);
 

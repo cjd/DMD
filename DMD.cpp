@@ -666,72 +666,154 @@ byte DMD::getPixel(unsigned int bX, unsigned int bY)
 /* Transition between two buffers with output to third */
 boolean DMD::transition(byte frombuffer1, byte frombuffer2, byte outbuffer, byte transType, int step)
 {
+    unsigned int uiDMDRAMPointer;
     byte oldEditBuf=EditBuf;
     int centreX=DisplayMaxX/2;
     int centreY=DisplayMaxY/2;
-    for (int x=0;x<DisplayMaxX;x++) {
+
+    for (int x=0;x<(DisplayMaxX/8);x++) {
         for (int y=0;y<DisplayMaxY;y++) {
-            byte col=0;
-	        switch (transType) {
-	        case TRANS_WIPE_DOWN:
-                if (y<step) {
-                    EditBuf=frombuffer2;
-                } else {
-                    EditBuf=frombuffer1;
+            int panel = ((x*8)/DMD_PIXELS_ACROSS) +(DisplaysWide*(y/DMD_PIXELS_DOWN));
+            int bX=((x*8) % DMD_PIXELS_ACROSS) + (panel<<5);
+            int bY=y % DMD_PIXELS_DOWN;
+            //set pointer to DMD RAM byte to be modified
+            uiDMDRAMPointer = bX/8 + bY*(DisplaysTotal<<2);
+            for (byte col=0;col<DisplaysBPP;col++) {
+                byte outByte=0;
+                byte b1=bDMDScreenRAM[col+(DisplaysBPP*frombuffer1)][uiDMDRAMPointer];
+                byte b2=bDMDScreenRAM[col+(DisplaysBPP*frombuffer2)][uiDMDRAMPointer];
+	            switch (transType) {
+	            case TRANS_WIPE_DOWN:
+                    if (y<step) {
+                        outByte=b2;
+                    } else {
+                        outByte=b1;
+                    }
+                    break;
+	            case TRANS_WIPE_UP:
+                    if ((DisplayMaxY-y)<step) {
+                        outByte=b2;
+                    } else {
+                        outByte=b1;
+                    }
+                    break;
+	            case TRANS_WIPE_LEFT:
+                    if (((DisplayMaxX/8)-x)<((step/8)+1)) {
+                        outByte=b2;
+                    } else if (((DisplayMaxX/8)-x)>((step/8)+1)) {
+                        outByte=b1;
+                    } else {
+                        int off=step%8;
+                        int mask=(1<<(off+1)) -1;
+                        outByte=(b1|mask)&(b2|(~mask));
+                    }
+                    break;
+	            case TRANS_WIPE_RIGHT:
+                    if (x< (step/8) ) {
+                        outByte=b2;
+                    } else if (x> (step/8) ) {
+                        outByte=b1;
+                    } else {
+                        int off=7-(step%8);
+                        int mask=(1<<(off+1)) -1;
+                        outByte=(b2|mask)&(b1|(~mask));
+                    }
+                    break;
+	            case TRANS_BOX_IN:
+                    if (y<step || (y-DisplayMaxY>-step)) { // top/bottom
+                        outByte=b2;
+                    } else {
+                        if (x< (step/8) ) { // left
+                            outByte=b2;
+                        } else if (x> (step/8) ) { 
+                            if (((DisplayMaxX/8)-x)<((step/8)+1)) { // right
+                                outByte=b2;
+                            } else if (((DisplayMaxX/8)-x)>((step/8)+1)) {
+                                outByte=b1;
+                            } else { //right crossover
+                                int off=step%8;
+                                int mask=(1<<(off+1)) -1;
+                                outByte=(b1|mask)&(b2|(~mask));
+                            }
+                        } else { // left crossover
+                            int off=7-(step%8);
+                            int mask=(1<<(off+1)) -1;
+                            outByte=(b2|mask)&(b1|(~mask));
+                        }
+                    } 
+                    break;
+	            case TRANS_BOX_OUT:
+                    if (y>(centreY-step) && (y-DisplayMaxY<-(centreY-step))) {
+                        if (((centreX/8)-x)< ((step/8)+1)) { 
+                            outByte=b2;
+                            if ((x-(centreX/8)) > (step/8)) {
+                                outByte=b1;
+                            } else if ((x-(centreX/8))<(step/8)) {
+                                outByte=b2;
+                            } else {
+                                int off=7-(step%8);
+                                int mask=(1<<(off+1)) -1;
+                                outByte=(b2|mask)&(b1|(~mask));
+                            }
+                        } else if (((centreX/8)-x)> ((step/8)+1) ) {
+                            outByte=b1;
+                        } else { 
+                            int off=step%8;
+                            int mask=(1<<(off+1)) -1;
+                            outByte=(b1|mask)&(b2|(~mask));
+                        }
+                    } else { 
+                        outByte=b1;
+                    }
+                    break;
+	            case TRANS_CROSS_IN:
+                    if (y>step && (y-DisplayMaxY<-step)) { 
+                        outByte=b1;
+                    } else {
+                        if ((x < (step/8)) || ((DisplayMaxX/8)-x)<((step/8)+1) ) { 
+                            outByte=b2;
+                        } else if (x > (step/8) ) { 
+                            if (((DisplayMaxX/8)-x)>((step/8)+1)) {
+                                outByte=b1;
+                            } else { 
+                                int off=step%8;
+                                int mask=(1<<(off+1)) -1;
+                                outByte=(b1|mask)&(b2|(~mask));
+                            }
+                        } else {
+                            int off=7-(step%8);
+                            int mask=(1<<(off+1)) -1;
+                            outByte=(b2|mask)&(b1|(~mask));
+                        }
+                    } 
+                    break;
+	            case TRANS_CROSS_OUT:
+                    if (y<(centreY-step) || (y-DisplayMaxY>-(centreY-step))) {
+                        if (((centreX/8)-x)< ((step/8)+1)) { 
+                            outByte=b2;
+                            if ((x-(centreX/8)) > (step/8)) {
+                                outByte=b1;
+                            } else if ((x-(centreX/8))<(step/8)) {
+                                outByte=b2;
+                            } else {
+                                int off=7-(step%8);
+                                int mask=(1<<(off+1)) -1;
+                                outByte=(b2|mask)&(b1|(~mask));
+                            }
+                        } else if (((centreX/8)-x)> ((step/8)+1) ) {
+                            outByte=b1;
+                        } else { 
+                            int off=step%8;
+                            int mask=(1<<(off+1)) -1;
+                            outByte=(b1|mask)&(b2|(~mask));
+                        }
+                    } else { 
+                        outByte=b2;
+                    }
+                    break;
                 }
-                col = getPixel(x,y);
-                break;
-	        case TRANS_WIPE_UP:
-                if ((DisplayMaxY-y)<step) {
-                    EditBuf=frombuffer2;
-                } else {
-                    EditBuf=frombuffer1;
-                }
-                col = getPixel(x,y);
-                break;
-	        case TRANS_WIPE_LEFT:
-                if ((DisplayMaxX-x)<step) {
-                    EditBuf=frombuffer2;
-                } else {
-                    EditBuf=frombuffer1;
-                }
-                col = getPixel(x,y);
-                break;
-	        case TRANS_WIPE_RIGHT:
-                if (x<step) {
-                    EditBuf=frombuffer2;
-                } else {
-                    EditBuf=frombuffer1;
-                }
-                col = getPixel(x,y);
-                break;
-	        case TRANS_ZOOM_IN:
-                if (x<step || y<step || (x-DisplayMaxX>-step) || (y-DisplayMaxY>-step)) {
-                    EditBuf=frombuffer2;
-                } else {
-                    EditBuf=frombuffer1;
-                }
-                col = getPixel(x,y);
-                break;
-	        case TRANS_ZOOM_OUT:
-                if (x<(centreX-step) || y<(centreX-step) || (x-DisplayMaxX>-(centreX-step)) || (y-DisplayMaxY>-(centreX-step))) {
-                    EditBuf=frombuffer1;
-                } else {
-                    EditBuf=frombuffer2;
-                }
-                col = getPixel(x,y);
-                break;
-            default:
-                if ((DisplayMaxX-x)<step) {
-                    EditBuf=frombuffer2;
-                } else {
-                    EditBuf=frombuffer1;
-                }
-                col = getPixel(x,y);
-                break;
+                bDMDScreenRAM[0+(DisplaysBPP*outbuffer)][uiDMDRAMPointer] = outByte;
             }
-            EditBuf=outbuffer;
-            writePixel(x,y,col);
         }
     }
     EditBuf=oldEditBuf;
@@ -744,10 +826,12 @@ boolean DMD::transition(byte frombuffer1, byte frombuffer2, byte outbuffer, byte
 	case TRANS_WIPE_RIGHT:
         if (step>=DisplayMaxX) return false;
         break;
-	case TRANS_ZOOM_OUT:
-        if (step>(max(centreX,centreY))) return false;
+	case TRANS_BOX_OUT:
+	case TRANS_CROSS_OUT:
+	case TRANS_CROSS_IN:
+        if (step>=(max(centreX,centreY))) return false;
         break;
-	case TRANS_ZOOM_IN:
+	case TRANS_BOX_IN:
         if (step>(min(centreX,centreY))) return false;
         break;
     }
