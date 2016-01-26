@@ -45,7 +45,7 @@
 #define FONT3X5_WIDTH 3
 #define FONT3X5_HEIGHT 5
 
-static uint8_t Font3x5[] PROGMEM = {
+const static uint8_t Font3x5[] PROGMEM = {
     0x05, 0xC0, // size
     0x03, // width
     0x05, // height
